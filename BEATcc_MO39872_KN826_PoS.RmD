@@ -1,0 +1,136 @@
+---
+title: "BEATcc_MO39872_KN826_PoS"
+date: "`r format(Sys.time(), '%d %B, %Y')`"
+author: "Anh Nguyen Duc"
+output:
+  html_document:
+    toc: yes
+    toc_float: true
+    to_depth: 5
+    collapsed: false
+    smooth_scroll: false
+    number_sections: true
+    theme: united
+  word_document: default
+header-includes: \usepackage{docmute}
+classoption: landscape
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+require(tidyverse)
+require(knitr)
+require(rpact)# for group sequential design
+require(gMCP) # for multiple testing
+require(MASS) # for simulation from multivariate normal dist.
+require(mvtnorm) # for pmvnorm
+# require(bpp)
+require(haven)
+require(survival)
+require(meta)
+require(bayesmeta)
+require(metafor)
+# source("https://raw.github.roche.com/adaptR/adaptR-tutorials/master/simpleBoundarySummary.R")
+```
+
+
+## Supportive techinical resource
+
++ https://arxiv.org/pdf/1711.08683.pdf 
+
++ (https://onlinelibrary.wiley.com/doi/full/10.1002/jrsm.1217 
+
+## Approach
+
++ Use random fixed effect model to meta-analyze outcomes from IMagyn050 and KN826 and then consider the reulting posterior predictive distribution for BEATcc to predict its POS at the IA (https://arxiv.org/pdf/1711.08683.pdf). Specifically,
+
+    + Prior distribution for effect (log HR) parameter: (improper) uniform prior is used.
+    
+    + Prior distribution for $\tau$ (heterogeneity / across studies variance) parameter: weakly informative half-normal prior with scale of 0.5 to cover a wide range of cross-study heterogeneity (https://onlinelibrary.wiley.com/doi/full/10.1002/jrsm.1217).
+
++ As one is not clear about the observed benefit from KN826, the PoS based on various assumed observed HR for PFS is considered.
+
++ Intrinsic colleration between PFS and OS from BEATcc as well as the potential for $\alpha$-recycling are ignored. Hence results could likely serve as lower boundary for PoS.
+
+## Assumption
+
++ Merck considered a hierarchy of: CPS$\ge$10 PFS $\rightarrow$ ITT PFS $\rightarrow$ CPS$\ge$10 OS $\rightarrow$ ITT OS i.e. with this the announcement means all endpoints were tested at full alpha of 5%.
+
++ Prevalence of CPS$\ge$10 = 70%, hence the observed number of PFS events for ITT was $227/0.7$ and OS-ITT events of $184/0.7$.
+
+## PoS for PFS
+
+### At the efficacy boundary from KN826 for PFS
+
+```{r, echo=TRUE, warning=TRUE, results='asis'}
+## PFS
+
+# get the efficacy boundary for KN826
+deg_PFS_826 <- getDesignGroupSequential(kMax = 2, alpha = 0.025, sided = 1, informationRates = c(182, 227)/227)
+
+# HR PFS ITT = 0.73 is based on trial-errors to get 260 and 324 PFS events at 1st and 2nd IA (PFS FA)
+sam_PFS_826 <- getSampleSizeSurvival(design = deg_PFS_826, hazardRatio = 0.73)
+sam_PFS_826 %>% summary
+
+meta_PFS <- bayesmeta(y      = c(log(0.92),              log(sam_PFS_826$criticalValuesEffectScale[2])), 
+                      sigma  = c(2/sqrt(341),            2/sqrt(227/.7) ),
+                      labels = c('IMagyn050 Pimary CSR', "KN826"),
+                      tau.prior = function(x){dhalfnormal(x,scale=1)})
+
+meta_PFS %>% print
+forestplot(meta_PFS) %>% print
+
+# This follows p27 of "Bayesian Random-Effects Meta-Analysis Using the bayesmeta R Package"
+foo <- function(x) meta_PFS$dposterior(mu = x, predict = TRUE) * pnorm( (0.756%>%log - x) / (2/sqrt(280))  )
+
+integrate(foo, lower=-Inf, upper=Inf)$value # Please note we need to use this for the effect estimate not the "true" study effect size
+
+```
+
+### At several assumed observed PFS HR ITT from KN826
+```{r, echo=TRUE, warning=TRUE, results='asis'}
+# now we run through several assumed observed HR for PFS from KN826
+hrPFS_826 <- c(0.7986178, seq(.79, .7, -.005))
+
+PoS_PFS   <- Pos_PFS_no_050<- NULL
+
+for (hr_pfs in hrPFS_826) {
+  meta_pfs <- bayesmeta(y      = c(log(0.92),              log(hr_pfs)), 
+                        sigma  = c(2/sqrt(341),            2/sqrt(227/.7) ),
+                        labels = c('IMagyn050 Pimary CSR', "KN826"),
+                        tau.prior = function(x){dhalfnormal(x,scale=1)})
+
+  foo <- function(x) meta_pfs$dposterior(mu = x, predict = TRUE) * pnorm( (0.756%>%log - x) / (2/sqrt(280))  )
+
+  PoS_PFS        <- c(PoS_PFS, integrate(foo, lower=-Inf, upper=Inf)$value )
+  Pos_PFS_no_050 <- c(Pos_PFS_no_050, pnorm( (0.756%>%log - hr_pfs%>%log) / (2/sqrt(280))  ) )
+} # end of for (hr_pfs %in% hrPFS_826)
+
+# plot(hrPFS_826, PoS_PFS, type='l', bty="7", xlab='Observed PFS HR in ITT in KN826', ylab='PoS for PFS in BEATcc')
+rbind('hrPFS_826'=hrPFS_826, 'PoS_PFS_BEATcc'=PoS_PFS, 'PoS_PFS_BEATcc_no_050'=Pos_PFS_no_050) %>% kable(digits = 3, col.names = rep('.', PoS_PFS %>% length), row.names = T) %>% print
+```
+
+## PoS for OS (IA)
+
+### At several assumed observed OS HR ITT from KN826
+```{r, echo=TRUE, warning=TRUE, results='asis'}
+# now we run through several assumed observed HR for PFS from KN826
+hrOS_826 <- c(0.82, seq(.79, .7, -.005))
+
+PoS_OS   <- Pos_OS_no_050 <- NULL
+
+for (hr_OS in hrOS_826) {
+  meta_OS <- bayesmeta(y      = c(log(0.96),              log(hr_OS)), 
+                       sigma  = c(2/sqrt(219),            2/sqrt(184/.7) ),
+                       labels = c('IMagyn050 Pimary CSR', "KN826"),
+                       tau.prior = function(x){dhalfnormal(x,scale=1)})
+
+  foo <- function(x) meta_OS$dposterior(mu = x, predict = TRUE) * pnorm( (0.68%>%log - x) / (2/sqrt(197))  )
+  
+  PoS_OS        <- c(PoS_OS, integrate(foo, lower=-Inf, upper=Inf)$value )
+  Pos_OS_no_050 <- c(Pos_OS_no_050, pnorm( (0.68%>%log - hr_OS%>%log) / (2/sqrt(197))  ) )  
+} # end of for (hr_OS %in% hrOS_826)
+
+# plot(hrOS_826, PoS_OS, type='l', bty="7", xlab='Observed OS HR in ITT in KN826', ylab='PoS for OS in BEATcc')
+rbind('hrOS_826'=hrOS_826, 'PoS_OS_BEATcc'=PoS_OS, 'PoS_OS_BEATcc_no_050'=Pos_OS_no_050) %>% kable(digits = 3, col.names = rep('.', PoS_OS %>% length), row.names = T) %>% print
+```
