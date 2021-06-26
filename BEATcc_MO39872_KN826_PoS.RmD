@@ -73,7 +73,7 @@ sam_PFS_826 <- getSampleSizeSurvival(design = deg_PFS_826, hazardRatio = 0.73)
 sam_PFS_826 %>% summary
 
 meta_PFS <- bayesmeta(y      = c(log(0.92),              log(sam_PFS_826$criticalValuesEffectScale[2])), 
-                      sigma  = c(2/sqrt(341),            2/sqrt(227/.7) ),
+                      sigma  = c(2/sqrt(664),            2/sqrt(227/.7) ),
                       labels = c('IMagyn050 Pimary CSR', "KN826"),
                       tau.prior = function(x){dhalfnormal(x,scale=1)})
 
@@ -90,13 +90,15 @@ integrate(foo, lower=-Inf, upper=Inf)$value # Please note we need to use this fo
 ### At several assumed observed PFS HR ITT from KN826
 ```{r, echo=TRUE, warning=TRUE, results='asis'}
 # now we run through several assumed observed HR for PFS from KN826
-hrPFS_826 <- c(0.7986178, seq(.79, .7, -.005))
+# hrPFS_826 <- c(0.7986178, seq(.79, .7, -.005))
+
+hrPFS_826 <- c(0.7986178, .775, .750, .725, .7, .675, .65)
 
 PoS_PFS   <- Pos_PFS_no_050<- NULL
 
 for (hr_pfs in hrPFS_826) {
   meta_pfs <- bayesmeta(y      = c(log(0.92),              log(hr_pfs)), 
-                        sigma  = c(2/sqrt(341),            2/sqrt(227/.7) ),
+                        sigma  = c(2/sqrt(664),            2/sqrt(227/.7) ),
                         labels = c('IMagyn050 Pimary CSR', "KN826"),
                         tau.prior = function(x){dhalfnormal(x,scale=1)})
 
@@ -115,7 +117,8 @@ rbind('hrPFS_826'=hrPFS_826, 'PoS_PFS_BEATcc'=PoS_PFS, 'PoS_PFS_BEATcc_no_050'=P
 ### At several assumed observed OS HR ITT from KN826
 ```{r, echo=TRUE, warning=TRUE, results='asis'}
 # now we run through several assumed observed HR for PFS from KN826
-hrOS_826 <- c(0.82, seq(.79, .7, -.005))
+# hrOS_826 <- c(0.82, seq(.79, .7, -.005))
+hrOS_826 <- c(0.82, .8, .75, .7)
 
 PoS_OS   <- Pos_OS_no_050 <- NULL
 
